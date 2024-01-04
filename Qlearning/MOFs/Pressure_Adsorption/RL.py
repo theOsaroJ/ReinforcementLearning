@@ -15,13 +15,10 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Load X_test data from the CSV file
-X_test = pd.read_csv('X_test.csv', delimiter=',')
+test_data = pd.read_csv('Test.csv', delimiter=',')
 
 # Load the training data from 'Prior.csv'
 prior_data = pd.read_csv('Prior.csv', delimiter=',') if 'Prior.csv' in os.listdir() else None
-
-# Load actual Y values from the 'y_actual.csv' file
-y_actual = pd.read_csv('y_actual.csv', delimiter=',')
 
 # Initialize prior data or use an empty DataFrame if 'Prior.csv' doesn't exist
 if prior_data is not None:
@@ -30,6 +27,9 @@ if prior_data is not None:
 else:
     prior_X = np.array([])
     prior_y = np.array([])
+
+X_test = test_data['X'].values.reshape(-1,1)
+y_actual = test_data['y'].values
 
 # Define the RL environment
 class Environment:
@@ -51,8 +51,8 @@ class Environment:
         if next_state not in self.queried_indices:
             self.queried_indices.append(next_state)
             # Fit the GP model
-            X_train = self.X_test.iloc[self.queried_indices]
-            y_train = self.y_actual.iloc[self.queried_indices]
+            X_train = self.X_test[self.queried_indices]
+            y_train = self.y_actual[self.queried_indices]
             self.gp_model.fit(X_train, y_train)
             r2_before = r2_score(self.y_actual, self.gp_model.predict(self.X_test))
             
@@ -93,13 +93,13 @@ def train_q_learning(env, gp, alpha, gamma, epsilon, max_episodes):
 
             state = next_state
 
-        X_test_episode = env.X_test.iloc[action]
-        y_actual_episode = env.y_actual.iloc[action]
+        X_test_episode = env.X_test[action]
+        y_actual_episode = env.y_actual[action]
         print(f'Added Data - X_test episode: {X_test_episode} - y_actual episode: {y_actual_episode}')
         
         # Update prior data for the next episode
-        env.prior_X = np.append(env.prior_X, env.X_test.iloc[action])
-        env.prior_y = np.append(env.prior_y, env.y_actual.iloc[action])
+        env.prior_X = np.append(env.prior_X, env.X_test[action])
+        env.prior_y = np.append(env.prior_y, env.y_actual[action])
         print('Data')
         print(env.prior_X)
         print(env.prior_y)
