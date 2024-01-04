@@ -2,7 +2,6 @@
 Authors: Etinosa Osaro, Yamil J Colon
 '''
 #!/usr/bin/env python3
-
 import numpy as np
 import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -134,6 +133,17 @@ param_grid = {
     'kernel':[RationalQuadratic(length_scale=50, alpha=0.5,length_scale_bounds=(1e-8,1e8),alpha_bounds=(1e-8,1e8))]
 }
 
+# Function to save data to a file with specific parameters
+def save_data(prior_X, prior_y, predicted_values, alpha, gamma, epsilon, max_episodes):
+    # Save prior X and prior y
+    combined_data = np.hstack((prior_X.reshape(-1, 1), prior_y.reshape(-1, 1)))
+    filename = f'Prior_data_{alpha}_{gamma}_{epsilon}_{max_episodes}.csv'
+    np.savetxt(filename, combined_data, delimiter=',')
+
+    # Save predicted values
+    predicted_filename = f'Predicted_values_{alpha}_{gamma}_{epsilon}_{max_episodes}.csv'
+    np.savetxt(predicted_filename, predicted_values, delimiter=',')
+
 best_r2 = -float('inf')
 best_params = None
 
@@ -145,7 +155,17 @@ for params in ParameterGrid(param_grid):
 
     # Train the Q-learning agent
     r2_values = train_q_learning(env, gp, params['alpha'], params['gamma'], params['epsilon'], params['max_episodes'])
-    
+
+    # Get predicted values after training
+    predicted_values = env.gp_model.predict(env.X_test)
+    predicted_values = predicted_values.tolist()
+    for i in range(len(predicted_values)):
+        if (predicted_values[i] <= 0):
+                predicted_values[i] = 1e-5
+
+    # Save data to files with specific parameters
+    save_data(env.prior_X, env.prior_y, predicted_values, params['alpha'], params['gamma'], params['epsilon'], params['max_episodes'])
+
     # Check if the current parameters result in a better R2 score
     if r2_values[-1] > best_r2:
         best_r2 = r2_values[-1]
