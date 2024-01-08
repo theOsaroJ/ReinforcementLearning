@@ -133,15 +133,28 @@ param_grid = {
     'kernel':[RationalQuadratic(length_scale=50, alpha=0.5,length_scale_bounds=(1e-8,1e8),alpha_bounds=(1e-8,1e8)), Matern(length_scale=50, nu=1.5)]
 }
 
+
+# Function to get kernel abbreviation based on type
+def get_kernel_abbreviation(kernel):
+    if isinstance(kernel, RationalQuadratic):
+        return 'RQ'
+    elif isinstance(kernel, Matern):
+        return 'MA'
+    else:
+        return 'Other'
+
 # Function to save data to a file with specific parameters
-def save_data(prior_X, prior_y, predicted_values, alpha, gamma, epsilon, max_episodes):
+def save_data(prior_X, prior_y, predicted_values, alpha, gamma, epsilon, max_episodes, kernel):
+    # Abbreviate kernel type
+    kernel_abbr = get_kernel_abbreviation(kernel)
+    
     # Save prior X and prior y
     combined_data = np.hstack((prior_X.reshape(-1, 1), prior_y.reshape(-1, 1)))
-    filename = f'Prior_data_{alpha}_{gamma}_{epsilon}_{max_episodes}.csv'
+    filename = f'Prior_data_{alpha}_{gamma}_{epsilon}_{max_episodes}_{kernel_abbr}.csv'
     np.savetxt(filename, combined_data, delimiter=',')
 
     # Save predicted values
-    predicted_filename = f'Predicted_values_{alpha}_{gamma}_{epsilon}_{max_episodes}.csv'
+    predicted_filename = f'Predicted_values_{alpha}_{gamma}_{epsilon}_{max_episodes}_{kernel_abbr}.csv'
     np.savetxt(predicted_filename, predicted_values, delimiter=',')
 
 best_r2 = -float('inf')
@@ -164,7 +177,7 @@ for params in ParameterGrid(param_grid):
                 predicted_values[i] = 1e-5
 
     # Save data to files with specific parameters
-    save_data(env.prior_X, env.prior_y, predicted_values, params['alpha'], params['gamma'], params['epsilon'], params['max_episodes'])
+    save_data(env.prior_X, env.prior_y, predicted_values, params['alpha'], params['gamma'], params['epsilon'], params['max_episodes'], params['kernel'])
 
     # Check if the current parameters result in a better R2 score
     if r2_values[-1] > best_r2:
