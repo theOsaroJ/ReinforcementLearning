@@ -13,3 +13,4 @@ fi
 
 mv Prior_data* Results
 mv Predicted* Results
+mv R2* Results
