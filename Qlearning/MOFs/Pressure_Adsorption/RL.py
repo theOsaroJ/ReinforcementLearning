@@ -159,6 +159,7 @@ def save_data(prior_X, prior_y, predicted_values, alpha, gamma, epsilon, max_epi
 
 best_r2 = -float('inf')
 best_params = None
+best_r2_values = None
 
 for params in ParameterGrid(param_grid):
     print(params)
@@ -179,10 +180,14 @@ for params in ParameterGrid(param_grid):
     # Save data to files with specific parameters
     save_data(env.prior_X, env.prior_y, predicted_values, params['alpha'], params['gamma'], params['epsilon'], params['max_episodes'], params['kernel'])
 
+    # Save R2 values to a file with specific parameters
+    r2_values_filename = f'R2_values_{params["alpha"]}_{params["gamma"]}_{params["epsilon"]}_{params["max_episodes"]}_{get_kernel_abbreviation(params["kernel"])}.csv'
+    np.savetxt(r2_values_filename, r2_values, delimiter=',')
     # Check if the current parameters result in a better R2 score
     if r2_values[-1] > best_r2:
         best_r2 = r2_values[-1]
         best_params = params
+        best_r2_values = r2_values
 
 print("Best Hyperparameters:")
 print(best_params)
