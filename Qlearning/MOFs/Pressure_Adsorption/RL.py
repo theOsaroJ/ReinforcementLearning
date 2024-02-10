@@ -1,11 +1,11 @@
 '''
-Authors: Etinosa Osaro, Yamil J Colon
+Author: Etinosa Osaro
 '''
 #!/usr/bin/env python3
 import numpy as np
 import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RationalQuadratic, Matern
+from sklearn.gaussian_process.kernels import RationalQuadratic, Matern, WhiteKernel
 from sklearn.metrics import r2_score
 from sklearn.model_selection import ParameterGrid
 import os
@@ -129,8 +129,8 @@ param_grid = {
     'alpha': [0.001, 0.01, 0.1],
     'gamma': [0.1, 0.3, 0.5, 0.7, 0.9],
     'epsilon': [0.1, 0.3, 0.5, 0.7, 0.9],
-    'max_episodes': [5, 10, 15],
-    'kernel':[RationalQuadratic(length_scale=50, alpha=0.5,length_scale_bounds=(1e-8,1e8),alpha_bounds=(1e-8,1e8)), Matern(length_scale=50, nu=1.5)]
+    'max_episodes': [5, 10, 15], 
+    'kernel':[RationalQuadratic(length_scale=50, alpha=0.5,length_scale_bounds=(1e-8,1e8),alpha_bounds=(1e-8,1e8)) + WhiteKernel(noise_level=0.5) , Matern(length_scale=50, nu=1.5) + WhiteKernel(noise_level=0.5)]
 }
 
 
