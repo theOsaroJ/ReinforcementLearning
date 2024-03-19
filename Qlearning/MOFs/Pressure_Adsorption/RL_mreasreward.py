@@ -207,7 +207,6 @@ for params in ParameterGrid(param_grid):
     env.prior_X1 = 10**((env.prior_X1 * X1_std) + X1_mean)
     env.prior_y = 10**((env.prior_y * y_std) + y_mean)
     
-    print('Data')
     print(env.prior_X1)
     print(env.prior_y)
 
@@ -229,7 +228,6 @@ for params in ParameterGrid(param_grid):
         best_mre_params = params
         best_mre_values = values
         
-
 print("Best R2 Hyperparameters:")
 print(best_r2_params)
 print("Best MRE Hyperparameters:")
