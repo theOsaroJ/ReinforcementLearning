@@ -16,7 +16,7 @@ UnitCells UA UB UC
 ExternalTemperature 298
 ExternalPressure PPP
 
-Component 0 MoleculeName             methane
+Component 0 MoleculeName             adsorbate
             MoleculeDefinition       TraPPE
             TranslationProbability   0.5
             ReinsertionProbability   0.5
