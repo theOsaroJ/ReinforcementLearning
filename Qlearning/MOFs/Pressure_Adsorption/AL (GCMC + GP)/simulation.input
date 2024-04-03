@@ -1,0 +1,25 @@
+SimulationType                MonteCarlo
+NumberOfCycles                200000
+NumberOfInitializationCycles  100000
+PrintEvery                    2000
+
+ContinueAfterCrash            no
+WriteBinaryRestartFileEvery   2000
+UseChargesFromCIFFile         yes
+
+Forcefield                    UFF
+RemoveAtomNumberCodeFromLabel yes
+
+Framework 0
+FrameworkName MOF
+UnitCells UA UB UC
+ExternalTemperature 298
+ExternalPressure PPP
+
+Component 0 MoleculeName             methane
+            MoleculeDefinition       TraPPE
+            TranslationProbability   0.5
+            ReinsertionProbability   0.5
+            RotationProbability      0.5
+            SwapProbability          1.0
+            CreateNumberOfMolecules  0
