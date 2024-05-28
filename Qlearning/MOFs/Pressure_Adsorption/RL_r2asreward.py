@@ -1,11 +1,7 @@
-'''
-Author: Etinosa Osaro
-'''
-#!/usr/bin/env python3
 import numpy as np
 import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RationalQuadratic, Matern, WhiteKernel
+from sklearn.gaussian_process.kernels import RationalQuadratic, Matern
 from sklearn.metrics import r2_score
 from sklearn.model_selection import ParameterGrid
 import os
@@ -14,181 +10,236 @@ simplefilter(action='ignore', category=FutureWarning)
 import warnings
 warnings.filterwarnings("ignore")
 
+np.random.seed(42)
+
 # Load X_test data from the CSV file
 test_data = pd.read_csv('Test.csv', delimiter=',')
+
+X_test_X1_ori = test_data['X1'].values.reshape(-1, 1)
+y_actual_ori = test_data['y'].values
 
 # Load the training data from 'Prior.csv'
 prior_data = pd.read_csv('Prior.csv', delimiter=',') if 'Prior.csv' in os.listdir() else None
 
 # Initialize prior data or use an empty DataFrame if 'Prior.csv' doesn't exist
 if prior_data is not None:
-    prior_X = prior_data['X'].values.reshape(-1, 1)
+    # take the log scale of the X1 and y
+    prior_data['X1'] = np.log10(prior_data['X1'])
+    prior_data['y'] = np.log10(prior_data['y'])
+
+    # calculate the mean and std of the X1 and y
+    X1_mean = prior_data['X1'].mean()
+    X1_std = prior_data['X1'].std()
+
+    y_mean = prior_data['y'].mean()
+    y_std = prior_data['y'].std()
+
+    # normalize the X1
+    prior_data['X1'] = (prior_data['X1'] - X1_mean)/X1_std
+
+    # normalize the y
+    prior_data['y'] = (prior_data['y'] - y_mean)/y_std
+
+    # take the log scale of the X1 in test data
+    test_data['X1'] = np.log10(test_data['X1'])
+    test_data['y'] = np.log10(test_data['y'])
+    
+    # normalize the X1 and y in test data
+    test_data['X1'] = (test_data['X1'] - X1_mean)/X1_std
+    test_data['y'] = (test_data['y'] - y_mean)/y_std
+
+    prior_X1 = prior_data['X1'].values.reshape(-1, 1)
     prior_y = prior_data['y'].values
+    
 else:
-    prior_X = np.array([])
+    prior_X1 = np.array([]).reshape(-1, 1)
     prior_y = np.array([])
 
-X_test = test_data['X'].values.reshape(-1,1)
+X_test_X1 = test_data['X1'].values.reshape(-1, 1)
 y_actual = test_data['y'].values
 
-# Define the RL environment
 class Environment:
-    def __init__(self, X_test, gp_model, y_actual, prior_X, prior_y):
-        self.X_test = X_test
+    def __init__(self, X_test_X1_ori, gp_model, y_actual, prior_X1, prior_y, X_test_X1):
+        self.X_test_X1_ori = X_test_X1_ori
         self.gp_model = gp_model
         self.y_actual = y_actual
-        self.num_states = len(X_test)  # Number of states (data points in X_test)
-        self.num_actions = len(X_test)  # Number of actions (select any data point)
-        self.state = 0  # Initial state (start from the first data point)
-        self.queried_indices = []  # To keep track of queried data points
-        self.prior_X = prior_X  # Initialize prior data
-        self.prior_y = prior_y  # Initialize prior target values
+        self.num_states = len(X_test_X1_ori)  
+        self.num_actions = len(X_test_X1_ori) 
+        self.state = 0  
+        self.queried_indices = []  
+        self.prior_X1 = prior_X1  
+        self.prior_y = prior_y  
+        self.X_test_X1 = X_test_X1
+        self.y_actual_ori = y_actual_ori
+
+        # Train the GP model with prior data if it exists
+        if self.prior_X1.size > 0:
+            self.gp_model.fit(self.prior_X1, self.prior_y)
+            initial_predictions = self.gp_model.predict(self.prior_X1)
+
+    def reset(self):
+        self.state = 0
+        self.queried_indices = []
 
     def step(self, action):
-        # Simulate acquiring data (labeling) for the selected data point
         next_state = action
 
         if next_state not in self.queried_indices:
             self.queried_indices.append(next_state)
-            # Fit the GP model
-            X_train = self.X_test[self.queried_indices]
-            y_train = self.y_actual[self.queried_indices]
-            self.gp_model.fit(X_train, y_train)
-            r2_before = r2_score(self.y_actual, self.gp_model.predict(self.X_test))
+
+            # Predict before adding new data point
+            y_pred_before = self.gp_model.predict(self.X_test_X1)
+            y_pred_before = 10**(y_pred_before * y_std + y_mean)
+            #print(f"y_pred_before: {y_pred_before}")
+            r2_before = r2_score(self.y_actual_ori, y_pred_before)
+            mre_before = np.mean(np.abs((self.y_actual_ori - y_pred_before) / self.y_actual_ori))
+
+            # Add the new data point and refit the GP model
+            X_train_X1 = np.vstack((self.prior_X1, self.X_test_X1[self.queried_indices]))
+            y_train = np.append(self.prior_y, self.y_actual[self.queried_indices])
+            self.gp_model.fit(X_train_X1, y_train)
+
+            # Predict after adding new data point
+            y_pred_after = self.gp_model.predict(self.X_test_X1)
+            y_pred_after = 10**(y_pred_after * y_std + y_mean)
+            #print(f"y_pred_after: {y_pred_after}")
+            r2_after = r2_score(self.y_actual_ori, y_pred_after)
+            mre_after = np.mean(np.abs((self.y_actual_ori - y_pred_after) / self.y_actual_ori))
             
-            if len(self.queried_indices) > 1 and len(self.queried_indices) <= len(X_train):
-                r2_after = r2_score(self.y_actual, self.gp_model.predict(self.X_test))
-                r2_increase = r2_after - r2_before  # Reward is the increase in R2 score
-            else:
-                r2_increase = -1.0  # A penalty for querying the same data point again
+            r2_increase = r2_after - r2_before
+            mre_increase = mre_after - mre_before
         else:
-            r2_increase = -1.0  # A penalty for querying the same data point again
+            r2_increase = 0.0
+            mre_increase = 0.0
 
-        done = (len(self.queried_indices) == self.num_states)  # Check if all data points have been queried
+        done = (len(self.queried_indices) == self.num_states)
 
-        return next_state, r2_increase, done
+        return next_state, r2_increase, mre_increase, done
 
-# Function to train the Q-learning agent with given hyperparameters
-def train_q_learning(env, gp, alpha, gamma, epsilon, max_episodes):
-    Q = np.zeros((len(env.X_test), len(env.X_test)))
+def train_q_learning(env, alpha, gamma, epsilon, max_episodes):
+    Q = np.zeros((len(env.X_test_X1), len(env.X_test_X1)))
+
     r2_values = []
+    mre_values = []
 
     for episode in range(max_episodes):
-        state = 0  # Set the initial state as 0 (or any other appropriate initial state)
+        env.reset()  # Reset the environment for a new episode
+        state = 0
         done = False
+        #print(f'Starting episode {episode}')
 
         while not done:
-            if np.random.rand() < epsilon:
-                action = np.random.randint(len(env.X_test))  # Exploration: choose a random action
+            max_q_value = np.max(Q[state, :])
+            #print(f"Max Q-value at state {state}: {max_q_value}")
+
+            rn= np.random.rand() 
+            if rn < epsilon or max_q_value == 0:
+                action = np.random.randint(len(env.X_test_X1))
+                #print(f"Exploring @ {rn}")
             else:
-                action = np.argmax(Q[state, :])  # Exploitation: choose the action with the highest Q-value
-
-            next_state, r2_increase, done = env.step(action)
-
-            if action < len(env.X_test):  # Check for valid indices
-                # Q-learning update rule
+                # Introduce randomness during exploitation
+                action = np.random.choice(np.flatnonzero(Q[state, :] == max_q_value))
+                #print(f"Exploiting @ {rn} with {max_q_value}")
+            next_state, r2_increase, mre_increase, done = env.step(action)
+            if action < len(env.X_test_X1):
                 Q[state, action] = (1 - alpha) * Q[state, action] + alpha * (r2_increase + gamma * np.max(Q[next_state, :]))
-            else:
-                r2_increase = -1.0  # A penalty for invalid actions
-
             state = next_state
 
-        X_test_episode = env.X_test[action]
-        y_actual_episode = env.y_actual[action]
-        print(f'Added Data - X_test episode: {X_test_episode} - y_actual episode: {y_actual_episode}')
+        X1_test_episode = env.X_test_X1[action]
+        y_actual_episode = env.y_actual_ori[action]
+        y_actual_episode = (np.log10(y_actual_episode) - y_mean) / y_std
         
         # Update prior data for the next episode
-        env.prior_X = np.append(env.prior_X, env.X_test[action])
-        env.prior_y = np.append(env.prior_y, env.y_actual[action])
-        print('Data')
-        print(env.prior_X)
-        print(env.prior_y)
+        env.prior_X1 = np.append(env.prior_X1, env.X_test_X1[action]).reshape(-1, 1)
+        env.prior_y = np.append(env.prior_y, y_actual_episode)
+        env.gp_model.fit(np.array(env.prior_X1).reshape(-1, 1), env.prior_y)
 
-        # Refit the GP model with the updated prior data
-        env.gp_model.fit(np.array(env.prior_X).reshape(-1, 1), env.prior_y)
-
-        # compute the predicted values
-
-        print(f"Predicted value: {env.gp_model.predict(env.X_test)}")
-        # Calculate the final R2 after each episode and store it
-        r2_final = r2_score(env.y_actual, env.gp_model.predict(env.X_test))
+        predicted_values = env.gp_model.predict(env.X_test_X1)
+        predicted_values = 10**(predicted_values * y_std + y_mean)
+        r2_final = r2_score(env.y_actual_ori, predicted_values)
         r2_values.append(r2_final)
 
-        # Print the R2 score after each episode
-        print(f'Episode {episode} - R2 Score: {r2_final:.4f}')
+        mre_final = np.mean(np.abs((env.y_actual_ori - predicted_values) / env.y_actual_ori))
+        mre_values.append(mre_final)
 
+        print(f'Episode {episode} - R2 Score: {r2_final:.4f} - MRE: {mre_final:.4f}')
 
-        # Stop episodes if R2 score >= 0.99
-        if r2_final >= 0.99:
-            print('A break happened')
-            break
+    # return the r2 values and mre values but concatenate them into a 2D array
+    values = np.concatenate((np.array(r2_values).reshape(-1, 1), np.array(mre_values).reshape(-1, 1)), axis=1)
 
-    return r2_values
-
+    return values
+   
 param_grid = {
-    'alpha': [0.001, 0.01, 0.1],
-    'gamma': [0.1, 0.3, 0.5, 0.7, 0.9],
-    'epsilon': [0.1, 0.3, 0.5, 0.7, 0.9],
-    'max_episodes': [5, 10], 
-    'kernel':[RationalQuadratic(length_scale=50, alpha=0.5,length_scale_bounds=(1e-8,1e8),alpha_bounds=(1e-8,1e8)) + WhiteKernel(noise_level=0.5) , Matern(length_scale=50, nu=1.5) + WhiteKernel(noise_level=0.5)]
-}
+    'alpha': [0.1],
+    'gamma': [0.9],
+    'epsilon': [0.1],
+    'max_episodes': [10],
+    'kernel': [RationalQuadratic(length_scale=50, alpha=0.5, length_scale_bounds=(1e-13, 1e13), alpha_bounds=(1e-13, 1e13))]
+    }
 
-
-# Function to get kernel abbreviation based on type
 def get_kernel_abbreviation(kernel):
     if isinstance(kernel, RationalQuadratic):
         return 'RQ'
-    elif isinstance(kernel, Matern):
-        return 'MA'
     else:
         return 'Other'
 
-# Function to save data to a file with specific parameters
-def save_data(prior_X, prior_y, predicted_values, alpha, gamma, epsilon, max_episodes, kernel):
-    # Abbreviate kernel type
+def save_data(prior_X1, prior_y, predicted_values, alpha, gamma, epsilon, max_episodes, kernel):
     kernel_abbr = get_kernel_abbreviation(kernel)
     
-    # Save prior X and prior y
-    combined_data = np.hstack((prior_X.reshape(-1, 1), prior_y.reshape(-1, 1)))
+    combined_data = np.hstack((prior_X1.reshape(-1, 1), prior_y.reshape(-1, 1)))
     filename = f'Prior_data_{alpha}_{gamma}_{epsilon}_{max_episodes}_{kernel_abbr}.csv'
     np.savetxt(filename, combined_data, delimiter=',')
 
-    # Save predicted values
     predicted_filename = f'Predicted_values_{alpha}_{gamma}_{epsilon}_{max_episodes}_{kernel_abbr}.csv'
     np.savetxt(predicted_filename, predicted_values, delimiter=',')
 
 best_r2 = -float('inf')
-best_params = None
+best_r2_params = None
 best_r2_values = None
+
+best_mre = float('inf')
+best_mre_params = None
+best_mre_values = None
 
 for params in ParameterGrid(param_grid):
     print(params)
-    # Create the Q-learning environment and GP model with the current parameters
     gp = GaussianProcessRegressor(kernel=params['kernel'], n_restarts_optimizer=50, normalize_y=True)
-    env = Environment(X_test, gp, y_actual, prior_X, prior_y)
+    
+    # Create the environment with the trained GP model
+    env = Environment(X_test_X1_ori, gp, y_actual, prior_X1, prior_y, X_test_X1)
 
-    # Train the Q-learning agent
-    r2_values = train_q_learning(env, gp, params['alpha'], params['gamma'], params['epsilon'], params['max_episodes'])
+    values = train_q_learning(env, params['alpha'], params['gamma'], params['epsilon'], params['max_episodes'])
 
-    # Get predicted values after training
-    predicted_values = env.gp_model.predict(env.X_test)
+    predicted_values = env.gp_model.predict(X_test_X1)
+    predicted_values = 10**((predicted_values * y_std) + y_mean)
     predicted_values = predicted_values.tolist()
     for i in range(len(predicted_values)):
-        if (predicted_values[i] <= 0):
-                predicted_values[i] = 1e-5
+        if predicted_values[i] <= 0:
+            predicted_values[i] = 1e-5
 
-    # Save data to files with specific parameters
-    save_data(env.prior_X, env.prior_y, predicted_values, params['alpha'], params['gamma'], params['epsilon'], params['max_episodes'], params['kernel'])
+    # convert the data back to original scale
+    env.prior_X1 = 10**((env.prior_X1 * X1_std) + X1_mean)
+    env.prior_y = 10**((env.prior_y * y_std) + y_mean)
 
-    # Save R2 values to a file with specific parameters
+    save_data(env.prior_X1, env.prior_y, predicted_values, params['alpha'], params['gamma'], params['epsilon'], params['max_episodes'], params['kernel'])
+
     r2_values_filename = f'R2_values_{params["alpha"]}_{params["gamma"]}_{params["epsilon"]}_{params["max_episodes"]}_{get_kernel_abbreviation(params["kernel"])}.csv'
-    np.savetxt(r2_values_filename, r2_values, delimiter=',')
-    # Check if the current parameters result in a better R2 score
-    if r2_values[-1] > best_r2:
-        best_r2 = r2_values[-1]
-        best_params = params
-        best_r2_values = r2_values
+    np.savetxt(r2_values_filename, values[:,0], delimiter=',')
 
-print("Best Hyperparameters:")
-print(best_params)
+    mre_values_filename = f'MRE_values_{params["alpha"]}_{params["gamma"]}_{params["epsilon"]}_{params["max_episodes"]}_{get_kernel_abbreviation(params["kernel"])}.csv'
+    np.savetxt(mre_values_filename, values[:,1], delimiter=',')
+
+    if values[-1][0] > best_r2:
+        best_r2 = values[-1][0]
+        best_r2_params = params
+        best_values = values
+
+    if values[-1][1] < best_mre:
+        best_mre = values[-1][1]
+        best_mre_params = params
+        best_mre_values = values
+
+print("Best R2 Hyperparameters:")
+print(best_r2_params)
 print("Best R2 Score:", best_r2)
+print("Best MRE Score:", best_mre)
