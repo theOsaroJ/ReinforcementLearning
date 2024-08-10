@@ -14,8 +14,6 @@ import signal
 
 np.random.seed(42)
 
-start_time = time.time()
-
 # Load X_test data from the CSV file
 test_data = pd.read_csv('Test.csv', delimiter=',')
 
@@ -246,7 +244,6 @@ for params in ParameterGrid(param_grid):
         print(f"Timeout for parameter set {params}, moving to the next set.")
         continue
     except IndexError:
-        print(f"Skipping parameter set {params} due to IndexError.")
         continue
 
     predicted_values = env.gp_model.predict(X_test_X1)
@@ -308,7 +305,3 @@ if best_mre_values is not None:
     best_mre_prior_data = pd.DataFrame({'X1': best_mre_prior_X1.flatten(), 'y': best_mre_prior_y})
     best_mre_prior_data_filename = f'Final_MRE_prior.csv'
     best_mre_prior_data.to_csv(best_mre_prior_data_filename, index=False)
-
-end_time = time.time()
-elapsed_time = end_time - start_time
-print(f"Elapsed Time: {elapsed_time} seconds")
